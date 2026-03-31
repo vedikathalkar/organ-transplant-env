@@ -10,7 +10,7 @@ The LLM agent reads the environment state and decides the best action.
 Runtime: < 20 minutes for all 3 tasks.
 
 Usage:
-    export API_BASE_URL="https://api-inference.huggingface.co/v1"
+    export API_BASE_URL="https://router.huggingface.co/v1"
     export MODEL_NAME="mistralai/Mistral-7B-Instruct-v0.3"
     export HF_TOKEN="hf_your_token_here"
     python inference.py
@@ -295,3 +295,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
