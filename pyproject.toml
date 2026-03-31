@@ -1,7 +1,7 @@
-﻿[project]
+[project]
 name = "organ-transplant-env"
 version = "1.0.0"
-description = "Organ Transplant Matching and Logistics OpenEnv"
+description = "Organ Transplant Matching OpenEnv"
 requires-python = ">=3.9"
 dependencies = [
     "fastapi",
