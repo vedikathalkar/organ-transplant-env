@@ -1,0 +1,162 @@
+openenv_version: "1.0"
+
+environment:
+  name: organ-transplant-matching
+  display_name: "Organ Transplant Matching & Logistics"
+  version: "1.0.0"
+  description: >
+    A real-world simulation where an AI agent acts as a national organ
+    transplant coordinator. The agent must match donated organs to waiting
+    patients, dispatch air transport, and maximise survival outcomes while
+    respecting blood-type compatibility and organ viability windows.
+  domain: healthcare
+  tags: [healthcare, logistics, matching, real-world, humanitarian]
+
+api:
+  base_url: "http://localhost:7860"
+  endpoints:
+    reset:
+      path: /reset
+      method: POST
+      description: "Reset environment for a given task and seed"
+    step:
+      path: /step
+      method: POST
+      description: "Submit one action, receive (state, reward, done, info)"
+    state:
+      path: /state
+      method: GET
+      description: "Get current environment state"
+    tasks:
+      path: /tasks
+      method: GET
+      description: "List all tasks with metadata"
+    grader:
+      path: /grader
+      method: POST
+      description: "Grade the current episode, returns score 0.0–1.0"
+    baseline:
+      path: /baseline
+      method: POST
+      description: "Run greedy baseline agent and return reproducible score"
+
+state_space:
+  type: object
+  properties:
+    step_count:
+      type: integer
+      description: "Current simulation step (1 step = 1 simulated hour)"
+    patients:
+      type: array
+      description: "Waiting patients"
+      item_properties:
+        id: string
+        blood_type: {enum: ["A+","A-","B+","B-","AB+","AB-","O+","O-"]}
+        organ_needed: {enum: ["Heart","Lungs","Liver","Kidney","Pancreas"]}
+        urgency: {type: integer, min: 1, max: 5}
+        wait_days: {type: integer, min: 0}
+        city: string
+        survival_probability: {type: float, min: 0.0, max: 1.0}
+        matched: boolean
+    organs:
+      type: array
+      description: "Available donor organs"
+      item_properties:
+        id: string
+        organ_type: {enum: ["Heart","Lungs","Liver","Kidney","Pancreas"]}
+        blood_type: {enum: ["A+","A-","B+","B-","AB+","AB-","O+","O-"]}
+        donor_city: string
+        viability_hours: {type: float, min: 0.0}
+        max_viability_hours: {type: float}
+        allocated: boolean
+    transports:
+      type: array
+      description: "In-transit organ shipments"
+      item_properties:
+        organ_id: string
+        patient_id: string
+        distance_km: float
+        travel_hours: float
+        status: {enum: ["in_transit","delivered","failed"]}
+    successful_transplants: {type: integer}
+    expired_organs: {type: integer}
+    failed_transplants: {type: integer}
+    total_reward: {type: float}
+    done: {type: boolean}
+
+action_space:
+  type: object
+  actions:
+    match:
+      description: "Match a compatible organ to a patient and dispatch transport"
+      required_fields: [action, organ_id, patient_id]
+      constraints:
+        - "organ.organ_type must equal patient.organ_needed"
+        - "organ blood type must be compatible with patient blood type"
+        - "organ viability_hours must be > 0"
+        - "organ must not already be allocated"
+        - "patient must not already be matched"
+    defer:
+      description: "Explicitly defer organ (small -0.02 penalty)"
+      required_fields: [action, organ_id]
+    tick:
+      description: "Advance time by 1 hour with no matching action"
+      required_fields: [action]
+
+reward:
+  range: [-inf, 1.0]  # per-step reward; cumulative unbounded
+  partial_rewards: true
+  components:
+    successful_transplant:
+      range: [0.0, 1.0]
+      formula: "0.40*urgency_score + 0.20*wait_score + 0.25*viability_score + 0.15*criticality_score"
+    valid_match_dispatched: +0.05
+    blood_type_incompatible: -0.20
+    organ_type_mismatch: -0.10
+    organ_expired_before_match: -0.10
+    transport_failure: -0.15
+    defer_action: -0.02
+    invalid_action: -0.05
+
+tasks:
+  - id: easy
+    name: "Single City Match"
+    difficulty: easy
+    description: "1 organ, 5 patients, all in one city. Learn basic matching."
+    n_organs: 1
+    n_patients: 5
+    n_cities: 1
+    max_steps: 10
+    viability_fraction: 1.0
+
+  - id: medium
+    name: "Multi-City Logistics"
+    difficulty: medium
+    description: "5 organs, 20 patients across 4 cities. Transport time matters."
+    n_organs: 5
+    n_patients: 20
+    n_cities: 4
+    max_steps: 50
+    viability_fraction: 0.8
+
+  - id: hard
+    name: "Mass Casualty Cascade"
+    difficulty: hard
+    description: "20 organs, 100 patients, 8 cities, reduced viability, transport failures."
+    n_organs: 20
+    n_patients: 100
+    n_cities: 8
+    max_steps: 200
+    viability_fraction: 0.5
+
+grader:
+  score_range: [0.0, 1.0]
+  components:
+    match_rate: 0.45
+    avg_match_quality: 0.30
+    organ_freshness: 0.15
+    transport_reliability: 0.10
+
+reproducibility:
+  seed_support: true
+  default_seed: 42
