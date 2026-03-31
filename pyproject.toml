@@ -1,7 +1,7 @@
 ﻿[project]
 name = "organ-transplant-env"
 version = "1.0.0"
-description = "Organ Transplant Matching & Logistics - OpenEnv"
+description = "Organ Transplant Matching and Logistics OpenEnv"
 requires-python = ">=3.9"
 dependencies = [
     "fastapi",
@@ -10,10 +10,3 @@ dependencies = [
     "httpx",
     "openai",
 ]
-
-[project.urls]
-Homepage = "https://huggingface.co/spaces/Vedika-T01/organ-transplant-env"
-
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.backends.legacy:build"
