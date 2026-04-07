@@ -31,7 +31,7 @@ ENV_HOST     = os.environ.get("ENV_HOST",     "http://localhost:7860")
 TASKS  = ["easy", "medium", "hard"]
 SEED   = 42
 
-# Blood compatibility table (used locally to pre-filter for the LLM prompt)
+# Blood compatibility table
 BLOOD_COMPATIBILITY = {
     "O-":  ["O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"],
     "O+":  ["O+", "A+", "B+", "AB+"],
@@ -50,7 +50,7 @@ def is_compatible(donor: str, recipient: str) -> bool:
 # ── OpenAI client ─────────────────────────────────────────────────────────────
 def get_client() -> OpenAI:
     if not HF_TOKEN:
-        print("⚠️  HF_TOKEN not set — using unauthenticated (may fail)")
+        print("WARNING: HF_TOKEN not set — using unauthenticated (may fail)")
     return OpenAI(
         base_url=API_BASE_URL,
         api_key=HF_TOKEN if HF_TOKEN else "dummy",
@@ -76,28 +76,27 @@ def env_grade(client: httpx.Client, task_id: str) -> dict:
     return r.json()
 
 
-# ── Build a compact state summary for the LLM ────────────────────────────────
-def build_prompt(state: dict) -> str:
+# ── Build prompt for LLM ─────────────────────────────────────────────────────
+def build_prompt(state: dict):
     organs = [o for o in state["organs"] if not o["allocated"] and o["viability_hours"] > 0]
     patients = [p for p in state["patients"] if not p["matched"]]
 
-    # Find valid (organ, patient) pairs
     valid_pairs = []
     for o in organs:
         for p in patients:
             if o["organ_type"] == p["organ_needed"] and is_compatible(o["blood_type"], p["blood_type"]):
                 valid_pairs.append({
-                    "organ_id":    o["id"],
-                    "patient_id":  p["id"],
-                    "organ_type":  o["organ_type"],
-                    "organ_blood": o["blood_type"],
-                    "donor_city":  o["donor_city"],
-                    "viability_h": round(o["viability_hours"], 1),
-                    "patient_blood":   p["blood_type"],
-                    "patient_city":    p["city"],
-                    "urgency":         p["urgency"],
-                    "wait_days":       p["wait_days"],
-                    "survival_prob":   p["survival_probability"],
+                    "organ_id":      o["id"],
+                    "patient_id":    p["id"],
+                    "organ_type":    o["organ_type"],
+                    "organ_blood":   o["blood_type"],
+                    "donor_city":    o["donor_city"],
+                    "viability_h":   round(o["viability_hours"], 1),
+                    "patient_blood": p["blood_type"],
+                    "patient_city":  p["city"],
+                    "urgency":       p["urgency"],
+                    "wait_days":     p["wait_days"],
+                    "survival_prob": p["survival_probability"],
                 })
 
     prompt = f"""You are an AI organ transplant coordinator.
@@ -110,14 +109,13 @@ CURRENT STATE:
 - Successful transplants so far: {state['successful_transplants']}
 - Expired organs so far: {state['expired_organs']}
 
-VALID COMPATIBLE PAIRS (organ_type matches, blood compatible):
+VALID COMPATIBLE PAIRS:
 {json.dumps(valid_pairs[:10], indent=2)}
 
 RULES:
 - Organs expire if viability_hours reaches 0 — act fast on low viability organs
 - Higher urgency (5=critical) patients should be prioritised
 - Longer wait_days = higher priority if urgency is equal
-- Lower survival_probability = more critical patient
 
 AVAILABLE ACTIONS:
 1. match: {{"action": "match", "organ_id": "...", "patient_id": "..."}}
@@ -125,11 +123,7 @@ AVAILABLE ACTIONS:
 3. tick:  {{"action": "tick"}}
 
 If there are valid pairs, always choose match.
-Pick the best pair: prioritise lowest viability organ + highest urgency patient.
-If no valid pairs exist, choose tick.
-
 Respond ONLY with a single valid JSON object. No explanation. No markdown. Just JSON.
-Example: {{"action": "match", "organ_id": "abc12345", "patient_id": "xyz67890"}}
 """
     return prompt, valid_pairs
 
@@ -138,7 +132,6 @@ Example: {{"action": "match", "organ_id": "abc12345", "patient_id": "xyz67890"}}
 def llm_action(llm: OpenAI, state: dict) -> dict:
     prompt, valid_pairs = build_prompt(state)
 
-    # If no valid pairs at all, skip LLM call and tick
     if not valid_pairs:
         return {"action": "tick"}
 
@@ -146,31 +139,20 @@ def llm_action(llm: OpenAI, state: dict) -> dict:
         response = llm.chat.completions.create(
             model=MODEL_NAME,
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are a medical AI coordinator. Always respond with valid JSON only.",
-                },
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
+                {"role": "system", "content": "You are a medical AI coordinator. Always respond with valid JSON only."},
+                {"role": "user", "content": prompt},
             ],
             max_tokens=100,
             temperature=0.1,
         )
 
         raw = response.choices[0].message.content.strip()
-
-        # Strip markdown fences if present
         raw = raw.replace("```json", "").replace("```", "").strip()
-
         action = json.loads(raw)
 
-        # Validate the action
         if action.get("action") == "match":
             organ_id   = action.get("organ_id", "")
             patient_id = action.get("patient_id", "")
-            # Check it's actually a valid pair
             valid = any(
                 p["organ_id"] == organ_id and p["patient_id"] == patient_id
                 for p in valid_pairs
@@ -178,8 +160,6 @@ def llm_action(llm: OpenAI, state: dict) -> dict:
             if valid:
                 return action
             else:
-                # LLM hallucinated IDs — fall back to best greedy pair
-                print("    ⚠️  LLM returned invalid IDs, using greedy fallback")
                 return greedy_fallback(valid_pairs)
 
         elif action.get("action") in ["defer", "tick"]:
@@ -189,12 +169,11 @@ def llm_action(llm: OpenAI, state: dict) -> dict:
             return greedy_fallback(valid_pairs)
 
     except Exception as e:
-        print(f"    ⚠️  LLM error: {e} — using greedy fallback")
+        print(f"    WARNING: LLM error: {e} — using greedy fallback")
         return greedy_fallback(valid_pairs)
 
 
 def greedy_fallback(valid_pairs: list) -> dict:
-    """Pick best pair by urgency + wait_days if LLM fails."""
     if not valid_pairs:
         return {"action": "tick"}
     best = max(valid_pairs, key=lambda p: p["urgency"] * 10 + p["wait_days"] / 100)
@@ -226,17 +205,17 @@ def run_task(llm: OpenAI, env_client: httpx.Client, task_id: str) -> dict:
         steps        += 1
 
         if result["reward"] > 0.1:
-            print(f"           ✅ reward={result['reward']:+.4f} | transplants={state['successful_transplants']}")
+            print(f"           reward={result['reward']:+.4f} | transplants={state['successful_transplants']}")
 
     grade = env_grade(env_client, task_id)
     score = grade["score"]
     b     = grade["breakdown"]
 
-    print(f"\n  ✅ Done in {steps} steps")
+    print(f"\n  Done in {steps} steps")
     print(f"  Total reward          : {total_reward:+.4f}")
     print(f"  Successful transplants: {b['successful_transplants']}")
     print(f"  Expired organs        : {b['expired_organs']}")
-    print(f"  🏆 SCORE              : {score:.4f}")
+    print(f"  SCORE                 : {score:.4f}")
 
     return {
         "task_id":      task_id,
@@ -249,50 +228,47 @@ def run_task(llm: OpenAI, env_client: httpx.Client, task_id: str) -> dict:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
-    print("\n🏥 Organ Transplant Matching — LLM Inference Agent")
+    print("START")
+    print("\nOrgan Transplant Matching — LLM Inference Agent")
     print(f"   API_BASE_URL : {API_BASE_URL}")
     print(f"   MODEL_NAME   : {MODEL_NAME}")
     print(f"   ENV_HOST     : {ENV_HOST}")
-    print(f"   HF_TOKEN     : {'set ✅' if HF_TOKEN else 'NOT SET ⚠️'}")
+    print(f"   HF_TOKEN     : {'set' if HF_TOKEN else 'NOT SET'}")
     print(f"   Seed         : {SEED}")
 
-    # Initialise clients
     llm = get_client()
 
     results = []
     with httpx.Client(timeout=120.0) as env_client:
 
-        # Health check
         try:
             r = env_client.get(f"{ENV_HOST}/")
             r.raise_for_status()
             print(f"\n   Environment OK: {r.json()['status']}")
         except Exception as e:
-            print(f"\n❌ Cannot reach environment at {ENV_HOST}: {e}")
+            print(f"\nERROR: Cannot reach environment at {ENV_HOST}: {e}")
             sys.exit(1)
 
-        # Run all tasks
         for task_id in TASKS:
             result = run_task(llm, env_client, task_id)
             results.append(result)
+            print(f"STEP task={task_id} score={result['score']}")
 
-    # Final summary
     print(f"\n{'='*55}")
     print("  FINAL SUMMARY")
     print(f"{'='*55}")
     for r in results:
-        bar   = "█" * int(r["score"] * 20)
+        bar = "=" * int(r["score"] * 20)
         print(f"  {r['task_id']:8} | {bar:<20} | {r['score']:.4f}")
 
     print(f"\n  Scores: { {r['task_id']: r['score'] for r in results} }")
-    print()
 
-    # Write results to file for validator
     with open("inference_results.json", "w") as f:
         json.dump(results, f, indent=2)
-    print("  Results saved to inference_results.json ✅")
+    print("  Results saved to inference_results.json")
+
+    print("END")
 
 
 if __name__ == "__main__":
     main()
-
