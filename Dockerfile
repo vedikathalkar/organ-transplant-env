@@ -1,4 +1,3 @@
-```dockerfile
 # ── Organ Transplant Matching Environment — Dockerfile ──────────────────────
 # Compatible with Hugging Face Spaces (port 7860)
 
@@ -19,7 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app/ ./app/
 COPY openenv.yaml .
-COPY inference.py .   # ✅ IMPORTANT (needed to run inference)
+COPY inference.py .
 
 # Hugging Face Spaces requires port 7860
 EXPOSE 7860
@@ -28,6 +27,5 @@ EXPOSE 7860
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:7860/ || exit 1
 
-# ✅ FINAL: Run inference + server together
+# Run inference + server
 CMD sh -c "python inference.py & uvicorn app.main:app --host 0.0.0.0 --port 7860 --workers 1"
-```
