@@ -1,0 +1,20 @@
+[
+  {
+    "task_id": "easy",
+    "score": 0.844,
+    "steps": 2,
+    "total_reward": 0.5299
+  },
+  {
+    "task_id": "medium",
+    "score": 0.6552,
+    "steps": 6,
+    "total_reward": 1.7518
+  },
+  {
+    "task_id": "hard",
+    "score": 0.5065,
+    "steps": 13,
+    "total_reward": 3.4536
+  }
+]
