@@ -133,7 +133,10 @@ def run_task(llm: OpenAI, env_client: httpx.Client, task_id: str) -> dict:
         print(f"[STEP] step={steps} reward={result['reward']:.4f}", flush=True)
 
     grade = env_grade(env_client, task_id)
-    score = grade["score"]
+    # Clamp score strictly between 0 and 1 (exclusive)
+    score = float(grade["score"])
+    score = max(0.001, min(0.999, score))
+    score = round(score, 4)
 
     print(f"[END] task={task_id} score={score:.4f} steps={steps}", flush=True)
 
@@ -169,7 +172,8 @@ def main():
 
     print("\nFINAL SUMMARY", flush=True)
     for r in results:
-        print(f"[STEP] task={r['task_id']} score={r['score']:.4f}", flush=True)
+        s = max(0.001, min(0.999, float(r['score'])))
+        print(f"[STEP] task={r['task_id']} score={s:.4f}", flush=True)
 
     with open("inference_results.json", "w") as f:
         json.dump(results, f, indent=2)

@@ -60,10 +60,13 @@ def tasks():
 async def grader(request: Request):
     try:
         body = await request.json()
-    except:
+    except Exception:
         body = {}
     task_id = body.get("task_id", "easy") if body else "easy"
-    return _get_env(task_id).grade()
+    result = _get_env(task_id).grade()
+    # Clamp score strictly between 0 and 1 exclusive
+    result["score"] = round(max(0.001, min(0.999, float(result["score"]))), 4)
+    return result
 
 @app.post("/baseline")
 async def baseline(request: Request):
