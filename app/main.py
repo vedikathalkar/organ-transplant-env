@@ -102,7 +102,7 @@ async def baseline(request: Request):
     env = OrganTransplantEnv(task_id=task_id, seed=seed)
     env.reset()
     done = False
-    total_reward = 0.0
+    total_reward = 0
     steps = 0
     while not done:
         s = env.state()
