@@ -487,7 +487,7 @@ class OrganTransplantEnv:
 
         total_organs = len(s.organs)
         if total_organs == 0:
-            return {"score": 0.0, "breakdown": {}}
+            return {"score": 0.001, "breakdown": {}}
 
         match_rate = min(s.successful_transplants / total_organs, 1.0)
         expiry_penalty = min(s.expired_organs / total_organs, 1.0)
@@ -506,7 +506,8 @@ class OrganTransplantEnv:
             0.15 * (1.0 - expiry_penalty) +
             0.10 * (1.0 - failure_penalty)
         )
-        score = round(min(max(raw_score, 0.0), 1.0), 4)
+        # Clamp strictly between 0 and 1 (exclusive) as required by validator
+        score = round(min(max(raw_score, 0.001), 0.999), 4)
 
         return {
             "score": score,
